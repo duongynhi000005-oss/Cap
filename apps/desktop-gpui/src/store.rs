@@ -1019,6 +1019,8 @@ pub struct GeneralSettings {
     pub custom_cursor_capture: bool,
     pub auto_zoom_on_clicks: bool,
     pub default_zoom_amount: Option<f32>,
+    pub auto_zoom_duration: Option<f32>,
+    pub auto_zoom_merge_gap: Option<f32>,
     pub capture_keyboard_events: bool,
     pub macbook_notch_overlay: bool,
     pub max_fps: u32,
@@ -1361,6 +1363,8 @@ impl GeneralSettings {
             custom_cursor_capture: bool_at(general, "custom_cursor_capture2", true),
             auto_zoom_on_clicks: bool_at(general, "autoZoomOnClicks", false),
             default_zoom_amount: opt_f32_at(general, "defaultZoomAmount"),
+            auto_zoom_duration: opt_f32_at(general, "autoZoomDuration"),
+            auto_zoom_merge_gap: opt_f32_at(general, "autoZoomMergeGap"),
             capture_keyboard_events: bool_at(general, "captureKeyboardEvents", true),
             macbook_notch_overlay: bool_at(general, "macbookNotchOverlay", false),
             max_fps: u32_at(general, "maxFps", 60),
@@ -2827,6 +2831,8 @@ mod tests {
     "recordingCountdown": 5,
     "custom_cursor_capture2": false,
     "defaultZoomAmount": 2.5,
+    "autoZoomDuration": 1.5,
+    "autoZoomMergeGap": 0.0,
     "maxFps": 120,
     "serverUrl": "https://cap.example.com",
     "excludedWindows": [{ "bundleIdentifier": null, "ownerName": null, "windowTitle": "Cap" }]
@@ -2846,6 +2852,8 @@ mod tests {
         assert_eq!(settings.recording_countdown, Some(5));
         assert!(!settings.custom_cursor_capture);
         assert_eq!(settings.default_zoom_amount, Some(2.5));
+        assert_eq!(settings.auto_zoom_duration, Some(1.5));
+        assert_eq!(settings.auto_zoom_merge_gap, Some(0.0));
         assert_eq!(settings.max_fps, 120);
         assert_eq!(settings.server_url, "https://cap.example.com");
         assert_eq!(settings.excluded_windows.len(), 1);

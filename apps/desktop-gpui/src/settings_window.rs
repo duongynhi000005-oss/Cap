@@ -194,6 +194,8 @@ impl Page {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MenuKind {
     Countdown,
+    AutoZoomDuration,
+    AutoZoomMergeGap,
     MainWindowStart,
     PostDeletion,
     MaxFps,
@@ -242,6 +244,23 @@ const COUNTDOWN_OPTIONS: &[(u32, fn() -> &'static str)] = &[
     (3, tr::settings::general::recording::countdown::seconds_3),
     (5, tr::settings::general::recording::countdown::seconds_5),
     (10, tr::settings::general::recording::countdown::seconds_10),
+];
+
+const AUTO_ZOOM_DURATION_OPTIONS: &[(f32, &str)] = &[
+    (1.0, "1s"),
+    (1.5, "1.5s"),
+    (2.5, "2.5s"),
+    (3.5, "3.5s"),
+    (5.0, "5s"),
+];
+
+const AUTO_ZOOM_MERGE_GAP_OPTIONS: &[(f32, &str)] = &[
+    (0.0, "Off"),
+    (1.0, "1s"),
+    (1.5, "1.5s"),
+    (2.5, "2.5s"),
+    (3.5, "3.5s"),
+    (5.0, "5s"),
 ];
 
 const STUDIO_QUALITY_TIERS: &[(StudioQuality, &str, &str)] = &[
@@ -1561,6 +1580,24 @@ impl SettingsWindow {
                     .map(|(value, label)| ui::MenuItem::new(label(), *value == current))
                     .collect()
             }
+            MenuKind::AutoZoomDuration => {
+                let current = self.settings.auto_zoom_duration.unwrap_or(2.5);
+                AUTO_ZOOM_DURATION_OPTIONS
+                    .iter()
+                    .map(|(value, label)| {
+                        ui::MenuItem::new(*label, (*value - current).abs() < 0.05)
+                    })
+                    .collect()
+            }
+            MenuKind::AutoZoomMergeGap => {
+                let current = self.settings.auto_zoom_merge_gap.unwrap_or(2.5);
+                AUTO_ZOOM_MERGE_GAP_OPTIONS
+                    .iter()
+                    .map(|(value, label)| {
+                        ui::MenuItem::new(*label, (*value - current).abs() < 0.05)
+                    })
+                    .collect()
+            }
             MenuKind::MaxFps => MAX_FPS_OPTIONS
                 .iter()
                 .map(|(value, label)| ui::MenuItem::new(label(), *value == self.settings.max_fps))
@@ -1597,6 +1634,18 @@ impl SettingsWindow {
                 if let Some((value, _)) = COUNTDOWN_OPTIONS.get(index) {
                     self.settings.recording_countdown = Some(*value);
                     self.write_u32("recordingCountdown", *value, cx);
+                }
+            }
+            MenuKind::AutoZoomDuration => {
+                if let Some((value, _)) = AUTO_ZOOM_DURATION_OPTIONS.get(index) {
+                    self.settings.auto_zoom_duration = Some(*value);
+                    self.write("autoZoomDuration", Value::from(f64::from(*value)), cx);
+                }
+            }
+            MenuKind::AutoZoomMergeGap => {
+                if let Some((value, _)) = AUTO_ZOOM_MERGE_GAP_OPTIONS.get(index) {
+                    self.settings.auto_zoom_merge_gap = Some(*value);
+                    self.write("autoZoomMergeGap", Value::from(f64::from(*value)), cx);
                 }
             }
             MenuKind::MaxFps => {
@@ -3677,6 +3726,18 @@ impl SettingsWindow {
             .map(|(_, label)| label().to_string())
             .unwrap_or_else(|| settings.max_fps.to_string());
         let zoom = settings.default_zoom_amount.unwrap_or(1.5);
+        let zoom_duration = settings.auto_zoom_duration.unwrap_or(2.5);
+        let zoom_duration_label = AUTO_ZOOM_DURATION_OPTIONS
+            .iter()
+            .find(|(value, _)| (*value - zoom_duration).abs() < 0.05)
+            .map(|(_, label)| (*label).to_string())
+            .unwrap_or_else(|| format!("{zoom_duration:.1}s"));
+        let zoom_merge_gap = settings.auto_zoom_merge_gap.unwrap_or(2.5);
+        let zoom_merge_gap_label = AUTO_ZOOM_MERGE_GAP_OPTIONS
+            .iter()
+            .find(|(value, _)| (*value - zoom_merge_gap).abs() < 0.05)
+            .map(|(_, label)| (*label).to_string())
+            .unwrap_or_else(|| format!("{zoom_merge_gap:.1}s"));
 
         self.section(
             tr::settings::general::recording::title(),
@@ -3847,6 +3908,28 @@ impl SettingsWindow {
                                     .child(format!("{zoom:.1}x")),
                             )
                             .into_any_element(),
+                    ),
+                    self.setting_row(
+                        "Zoom hold duration",
+                        Some("How long each auto-zoom stays zoomed in after a click"),
+                        self.select(
+                            "auto-zoom-duration",
+                            zoom_duration_label,
+                            MenuKind::AutoZoomDuration,
+                            cx,
+                        )
+                        .into_any_element(),
+                    ),
+                    self.setting_row(
+                        "Merge nearby clicks gap",
+                        Some("Combine auto-zooms when clicks happen within this window"),
+                        self.select(
+                            "auto-zoom-merge-gap",
+                            zoom_merge_gap_label,
+                            MenuKind::AutoZoomMergeGap,
+                            cx,
+                        )
+                        .into_any_element(),
                     ),
                     self.setting_row(
                         tr::settings::general::recording::capture_keyboard::label(),

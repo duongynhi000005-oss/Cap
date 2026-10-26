@@ -37,10 +37,14 @@ use crate::{
     teleprompter_window::{self, TeleprompterWindow},
 };
 
-/// Matches the Tauri `InProgressRecording` window and
-/// `fake_window.rs` position math.
+/// Matches the Tauri `InProgressRecording` window width and
+/// `fake_window.rs` position math. The collapsed window hugs the 40px bar +
+/// 12px vertical padding (`64px`) so no transparent margin above the bar can
+/// swallow clicks on apps underneath (#3357), expanding to `150px` only while
+/// an error or low-storage banner is shown.
 pub const CONTROLS_WIDTH: f32 = 320.;
-pub const CONTROLS_HEIGHT: f32 = 150.;
+pub const CONTROLS_HEIGHT: f32 = 64.;
+pub const CONTROLS_EXPANDED_HEIGHT: f32 = 150.;
 const CONTROLS_BOTTOM_OFFSET: f64 = 120.;
 const TARGET_CONTROLS_OFFSET_Y: f64 = 48.;
 

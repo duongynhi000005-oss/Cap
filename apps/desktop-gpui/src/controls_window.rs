@@ -1,6 +1,7 @@
 //! The in-progress recording bar -- `in-progress-recording.tsx`, natively.
 //!
-//! A 320x150 transparent panel whose visible content is a 40px card hugging the
+//! A 320x64 transparent panel (expanding to 320x150 when an error/warning
+//! banner is shown) whose visible content is a 40px card hugging the
 //! bottom: stop button with the elapsed timer on the left, mic indicator and
 //! action buttons on the right, a drag handle on the trailing edge. The window
 //! itself is a non-activating panel at the maximum window level (see
@@ -29,6 +30,7 @@ pub struct ControlsWindow {
     session: Entity<RecordingSession>,
     theme: Theme,
     has_microphone: bool,
+    expanded_for_issue: bool,
     #[cfg(target_os = "linux")]
     confirmation_pending: bool,
     /// Repaints the timer. An inactive window is repainted lazily by the
@@ -68,6 +70,7 @@ impl ControlsWindow {
                 this.ticking_live = live;
                 this._tick = Self::spawn_tick(window, cx);
             }
+            this.sync_window_height(window, cx);
             cx.notify();
         })
         .detach();
@@ -85,6 +88,7 @@ impl ControlsWindow {
             session,
             theme,
             has_microphone,
+            expanded_for_issue: false,
             #[cfg(target_os = "linux")]
             confirmation_pending: false,
             _tick: gpui::Task::ready(()),
@@ -93,6 +97,7 @@ impl ControlsWindow {
         };
         this.ticking_live = this.timer_is_live(cx);
         this._tick = Self::spawn_tick(window, cx);
+        this.sync_window_height(window, cx);
         this
     }
 
@@ -101,6 +106,33 @@ impl ControlsWindow {
             self.session.read(cx).phase,
             Phase::Recording { paused: false }
         )
+    }
+
+    fn has_issue(&self, cx: &gpui::App) -> bool {
+        let session = self.session.read(cx);
+        session.error.is_some() || session.storage_warning
+    }
+
+    fn sync_window_height(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let has_issue = self.has_issue(cx);
+        if has_issue == self.expanded_for_issue {
+            return;
+        }
+        self.expanded_for_issue = has_issue;
+        let target_height = controls_window_height(has_issue);
+        #[cfg(target_os = "macos")]
+        if let Some(native) = crate::platform::native_window(window) {
+            let (x, y, width, _) = crate::platform::window_frame(&native);
+            cx.spawn(async move |_, _| {
+                crate::platform::set_window_frame(&native, x, y, width, f64::from(target_height));
+            })
+            .detach();
+            return;
+        }
+        window.resize(gpui::size(
+            px(crate::app_windows::CONTROLS_WIDTH),
+            px(target_height),
+        ));
     }
 
     /// The timer shows whole seconds, so wake just after each one ticks over;
@@ -578,6 +610,14 @@ fn recording_issue_text(error: String) -> impl IntoElement + Styled {
         )
 }
 
+pub const fn controls_window_height(has_issue: bool) -> f32 {
+    if has_issue {
+        crate::app_windows::CONTROLS_EXPANDED_HEIGHT
+    } else {
+        crate::app_windows::CONTROLS_HEIGHT
+    }
+}
+
 fn tick_delay(live: bool, elapsed: Duration) -> Duration {
     if live {
         until_next_second(elapsed)
@@ -619,5 +659,11 @@ mod repaint_tests {
             tick_delay(false, Duration::from_millis(3_900)),
             Duration::from_secs(1)
         );
+    }
+
+    #[test]
+    fn controls_window_height_hugs_bar_until_an_issue_banner_is_shown() {
+        assert_eq!(controls_window_height(false), 64.);
+        assert_eq!(controls_window_height(true), 150.);
     }
 }

@@ -54,6 +54,11 @@ impl FramePool {
     }
 
     pub(crate) fn get_frame(&mut self) -> &mut ffmpeg::frame::Video {
+        if let Some(ref mut frame) = self.frame
+            && unsafe { ffmpeg::ffi::av_frame_make_writable(frame.as_mut_ptr()) } < 0
+        {
+            self.frame = None;
+        }
         if self.frame.is_none() {
             self.frame = Some(ffmpeg::frame::Video::new(
                 self.pixel_format,
@@ -236,6 +241,25 @@ mod tests {
             let width = row_width.min(src_stride).min(dest_stride);
             assert_eq!(dest[..width], src[..width]);
         }
+    }
+
+    #[test]
+    fn frame_pool_reuses_backing_buffer_when_writable_and_detaches_when_shared() {
+        let mut pool = super::FramePool::new(ffmpeg::format::Pixel::NV12, 64, 64);
+        let first_ptr = pool.get_frame().data(0).as_ptr();
+        let second_ptr = pool.get_frame().data(0).as_ptr();
+        assert_eq!(
+            first_ptr, second_ptr,
+            "writable pool frame should reuse backing buffer"
+        );
+
+        let retained = pool.get_frame().clone();
+        let third_ptr = pool.get_frame().data(0).as_ptr();
+        assert_ne!(
+            first_ptr, third_ptr,
+            "shared pool frame should allocate a writable replacement buffer via av_frame_make_writable"
+        );
+        drop(retained);
     }
 
     #[test]

@@ -374,6 +374,7 @@ impl OutOfProcessFragmentedM4SMuxer {
                 let pixel_format = ffmpeg_pixel_format_for_cap(video_config.pixel_format);
                 let mut frame_pool =
                     FramePool::new(pixel_format, video_config.width, video_config.height);
+                let mut converted_frame: Option<ffmpeg::frame::Video> = None;
 
                 let mut encoder = encoder;
                 let mut subprocess = subprocess;
@@ -389,59 +390,60 @@ impl OutOfProcessFragmentedM4SMuxer {
                 let slow_threshold_ms = frame_timing_log_threshold_ms(&video_config);
 
                 while let Ok(Some((sample_buf, timestamp))) = video_rx.recv() {
-                    last_timestamp = Some(timestamp);
+                    cidre::objc::ar_pool(|| {
+                        last_timestamp = Some(timestamp);
 
-                    match disk_monitor.poll(&base_path, &health_tx) {
-                        super::core::DiskSpacePollResult::Exhausted { .. } => {
-                            disk_exhausted = true;
+                        match disk_monitor.poll(&base_path, &health_tx) {
+                            super::core::DiskSpacePollResult::Exhausted { .. } => {
+                                disk_exhausted = true;
+                            }
+                            super::core::DiskSpacePollResult::Stopped => {
+                                disk_exhausted = true;
+                            }
+                            _ => {}
                         }
-                        super::core::DiskSpacePollResult::Stopped => {
-                            disk_exhausted = true;
+
+                        if disk_exhausted {
+                            return;
                         }
-                        _ => {}
-                    }
 
-                    if disk_exhausted {
-                        continue;
-                    }
-
-                    if subprocess_fatal || subprocess.is_exhausted() {
-                        continue;
-                    }
-
-                    let convert_start = std::time::Instant::now();
-                    let frame = frame_pool.get_frame();
-                    let fill_result = fill_frame_from_sample_buf(&sample_buf, frame);
-                    let convert_elapsed_ms = convert_start.elapsed().as_millis();
-
-                    if convert_elapsed_ms > slow_threshold_ms {
-                        slow_convert_count += 1;
-                        if slow_convert_count <= 5 || slow_convert_count.is_multiple_of(100) {
-                            debug!(
-                                elapsed_ms = convert_elapsed_ms,
-                                count = slow_convert_count,
-                                "OOP fill_frame_from_sample_buf exceeded {}ms threshold",
-                                slow_threshold_ms
-                            );
+                        if subprocess_fatal || subprocess.is_exhausted() {
+                            return;
                         }
-                    }
 
-                    match fill_result {
-                        Ok(()) => {
-                            let owned_frame = frame_pool.take_frame();
-                            let encode_start = std::time::Instant::now();
-                            let subprocess_ref = &mut subprocess;
-                            let keyframe_emitted_ref = &mut keyframe_emitted;
-                            let encode_result = encoder.encode_frame(
-                                owned_frame,
-                                timestamp,
-                                |pkt| {
-                                    if pkt.is_keyframe {
-                                        *keyframe_emitted_ref = true;
-                                    }
-                                    dispatch_packet(subprocess_ref, pkt)
-                                },
-                            );
+                        let convert_start = std::time::Instant::now();
+                        let frame = frame_pool.get_frame();
+                        let fill_result = fill_frame_from_sample_buf(&sample_buf, frame);
+                        let convert_elapsed_ms = convert_start.elapsed().as_millis();
+
+                        if convert_elapsed_ms > slow_threshold_ms {
+                            slow_convert_count += 1;
+                            if slow_convert_count <= 5 || slow_convert_count.is_multiple_of(100) {
+                                debug!(
+                                    elapsed_ms = convert_elapsed_ms,
+                                    count = slow_convert_count,
+                                    "OOP fill_frame_from_sample_buf exceeded {}ms threshold",
+                                    slow_threshold_ms
+                                );
+                            }
+                        }
+
+                        match fill_result {
+                            Ok(()) => {
+                                let encode_start = std::time::Instant::now();
+                                let subprocess_ref = &mut subprocess;
+                                let keyframe_emitted_ref = &mut keyframe_emitted;
+                                let encode_result = encoder.encode_frame_reusable(
+                                    frame,
+                                    &mut converted_frame,
+                                    timestamp,
+                                    |pkt| {
+                                        if pkt.is_keyframe {
+                                            *keyframe_emitted_ref = true;
+                                        }
+                                        dispatch_packet(subprocess_ref, pkt)
+                                    },
+                                );
                             let encode_elapsed_ms = encode_start.elapsed().as_millis();
                             if encode_elapsed_ms > slow_threshold_ms {
                                 slow_encode_count += 1;
@@ -498,6 +500,7 @@ impl OutOfProcessFragmentedM4SMuxer {
                                                     "OOP encoder rebuilt mid-stream"
                                                 );
                                                 encoder = new_enc;
+                                                converted_frame = None;
                                                 health_tx.emit(
                                                     super::core::PipelineHealthEvent::EncoderRebuilt {
                                                         backend: new_name,
@@ -523,9 +526,10 @@ impl OutOfProcessFragmentedM4SMuxer {
                         Err(e) => {
                             warn!("OOP failed to convert frame: {e:?}");
                         }
-                    }
+                        }
 
-                    total_frames += 1;
+                        total_frames += 1;
+                    });
                 }
 
                 let final_ts = last_timestamp.unwrap_or(Duration::ZERO);

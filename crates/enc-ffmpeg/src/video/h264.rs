@@ -990,6 +990,40 @@ impl H264Encoder {
         self.queue_frame_to(frame, timestamp, output)
     }
 
+    pub fn queue_frame_to_reusable<S: PacketSink + ?Sized>(
+        &mut self,
+        frame: &mut frame::Video,
+        timestamp: Duration,
+        output: &mut S,
+    ) -> Result<(), QueueFrameError> {
+        self.base.update_pts(frame, timestamp, &mut self.encoder);
+
+        let frame_to_send = if let Some(converter) = &mut self.converter {
+            let pts = frame.pts();
+            let converted = self.converted_frame_pool.as_mut().unwrap();
+            let ret = unsafe { ffmpeg::ffi::av_frame_make_writable(converted.as_mut_ptr()) };
+            if ret < 0 {
+                return Err(QueueFrameError::Encode(ffmpeg::Error::from(ret)));
+            }
+            super::convert_or_scale(frame, converted, converter)
+                .map_err(QueueFrameError::Converter)?;
+            converted.set_pts(pts);
+            converted as &frame::Video
+        } else {
+            frame as &frame::Video
+        };
+        let frame_to_send = self
+            .hw_upload
+            .frame(frame_to_send)
+            .map_err(QueueFrameError::Encode)?;
+
+        self.base
+            .send_frame(frame_to_send, output, &mut self.encoder)
+            .map_err(QueueFrameError::Encode)?;
+
+        Ok(())
+    }
+
     pub fn queue_frame_to<S: PacketSink + ?Sized>(
         &mut self,
         mut frame: frame::Video,
@@ -1002,6 +1036,10 @@ impl H264Encoder {
         let frame_to_send = if let Some(converter) = &mut self.converter {
             let pts = frame.pts();
             let converted = self.converted_frame_pool.as_mut().unwrap();
+            let ret = unsafe { ffmpeg::ffi::av_frame_make_writable(converted.as_mut_ptr()) };
+            if ret < 0 {
+                return Err(QueueFrameError::Encode(ffmpeg::Error::from(ret)));
+            }
             super::convert_or_scale(&frame, converted, converter)
                 .map_err(QueueFrameError::Converter)?;
             converted.set_pts(pts);
@@ -1032,9 +1070,20 @@ impl H264Encoder {
 
         let frame_to_send = if let Some(converter) = &mut self.converter {
             let pts = frame.pts();
+            if converted_frame.as_ref().is_some_and(|f| {
+                f.format() != self.output_format
+                    || f.width() != self.output_width
+                    || f.height() != self.output_height
+            }) {
+                *converted_frame = None;
+            }
             let converted = converted_frame.get_or_insert_with(|| {
                 frame::Video::new(self.output_format, self.output_width, self.output_height)
             });
+            let ret = unsafe { ffmpeg::ffi::av_frame_make_writable(converted.as_mut_ptr()) };
+            if ret < 0 {
+                return Err(QueueFrameError::Encode(ffmpeg::Error::from(ret)));
+            }
             super::convert_or_scale(frame, converted, converter)
                 .map_err(QueueFrameError::Converter)?;
             converted.set_pts(pts);

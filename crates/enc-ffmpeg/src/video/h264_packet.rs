@@ -143,6 +143,10 @@ impl H264PacketEncoder {
             let converted = self.converted_frame_pool.as_mut().expect(
                 "converted_frame_pool present whenever converter is Some (invariant preserved by from_opened)",
             );
+            let ret = unsafe { ffmpeg::ffi::av_frame_make_writable(converted.as_mut_ptr()) };
+            if ret < 0 {
+                return Err(EncodePacketError::Encode(ffmpeg::Error::from(ret)));
+            }
             super::convert_or_scale(&frame, converted, converter)
                 .map_err(EncodePacketError::Converter)?;
             converted.set_pts(pts);
@@ -176,9 +180,20 @@ impl H264PacketEncoder {
 
         let frame_to_send = if let Some(converter) = &mut self.converter {
             let pts = frame.pts();
+            if converted_frame.as_ref().is_some_and(|f| {
+                f.format() != self.output_format
+                    || f.width() != self.output_width
+                    || f.height() != self.output_height
+            }) {
+                *converted_frame = None;
+            }
             let converted = converted_frame.get_or_insert_with(|| {
                 frame::Video::new(self.output_format, self.output_width, self.output_height)
             });
+            let ret = unsafe { ffmpeg::ffi::av_frame_make_writable(converted.as_mut_ptr()) };
+            if ret < 0 {
+                return Err(EncodePacketError::Encode(ffmpeg::Error::from(ret)));
+            }
             super::convert_or_scale(frame, converted, converter)
                 .map_err(EncodePacketError::Converter)?;
             converted.set_pts(pts);

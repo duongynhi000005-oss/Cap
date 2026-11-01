@@ -455,7 +455,7 @@ impl Muxer for AVFoundationMp4Muxer {
                             const MAX_RETRIES: u32 = 100;
 
                             loop {
-                                let queue_result = {
+                                let queue_result = cidre::objc::ar_pool(|| {
                                     let mut encoder = match encoder_clone.lock() {
                                         Ok(e) => e,
                                         Err(_) => {
@@ -464,8 +464,8 @@ impl Muxer for AVFoundationMp4Muxer {
                                             return Err(anyhow!(message));
                                         }
                                     };
-                                    encoder.queue_video_frame(sample_buf.clone(), timestamp)
-                                };
+                                    Ok(encoder.queue_video_frame(sample_buf.clone(), timestamp))
+                                })?;
 
                                 match queue_result {
                                     Ok(()) => break,
@@ -586,7 +586,7 @@ impl Muxer for AVFoundationMp4Muxer {
                                 const MAX_RETRIES: u32 = 50;
 
                                 loop {
-                                    let queue_result = {
+                                    let queue_result = cidre::objc::ar_pool(|| {
                                         let mut encoder = match encoder_clone.lock() {
                                             Ok(e) => e,
                                             Err(_) => {
@@ -599,8 +599,8 @@ impl Muxer for AVFoundationMp4Muxer {
                                                 return Err(anyhow!(message));
                                             }
                                         };
-                                        encoder.queue_audio_frame(&frame, timestamp)
-                                    };
+                                        Ok(encoder.queue_audio_frame(&frame, timestamp))
+                                    })?;
 
                                     match queue_result {
                                         Ok(()) => break,
@@ -1072,7 +1072,7 @@ impl Muxer for AVFoundationCameraMuxer {
                             const MAX_RETRIES: u32 = 100;
 
                             loop {
-                                let queue_result = {
+                                let queue_result = cidre::objc::ar_pool(|| {
                                     let mut encoder = match encoder_clone.lock() {
                                         Ok(e) => e,
                                         Err(_) => {
@@ -1082,8 +1082,8 @@ impl Muxer for AVFoundationCameraMuxer {
                                             return Err(anyhow!(message));
                                         }
                                     };
-                                    encoder.queue_video_frame(sample_buf.clone(), timestamp)
-                                };
+                                    Ok(encoder.queue_video_frame(sample_buf.clone(), timestamp))
+                                })?;
 
                                 match queue_result {
                                     Ok(()) => break,
@@ -1203,7 +1203,7 @@ impl Muxer for AVFoundationCameraMuxer {
                                 const MAX_RETRIES: u32 = 50;
 
                                 loop {
-                                    let queue_result = {
+                                    let queue_result = cidre::objc::ar_pool(|| {
                                         let mut encoder = match encoder_clone.lock() {
                                             Ok(e) => e,
                                             Err(_) => {
@@ -1212,8 +1212,8 @@ impl Muxer for AVFoundationCameraMuxer {
                                                 return Err(anyhow!(message));
                                             }
                                         };
-                                        encoder.queue_audio_frame(&frame, timestamp)
-                                    };
+                                        Ok(encoder.queue_audio_frame(&frame, timestamp))
+                                    })?;
 
                                     match queue_result {
                                         Ok(()) => break,

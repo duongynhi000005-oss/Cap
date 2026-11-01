@@ -480,6 +480,19 @@ impl SegmentedVideoEncoder {
         Ok(())
     }
 
+    pub fn queue_frame_reusable(
+        &mut self,
+        frame: &mut frame::Video,
+        timestamp: Duration,
+    ) -> Result<(), QueueFrameError> {
+        self.encoder
+            .queue_frame_to_reusable(frame, timestamp, &mut self.mux)?;
+
+        self.mux.frame_queued();
+
+        Ok(())
+    }
+
     pub fn finish(&mut self) -> Result<(), FinishError> {
         let encoder = &mut self.encoder;
         self.mux

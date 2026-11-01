@@ -3492,6 +3492,45 @@ impl SettingsWindow {
             );
 
         let mut rows = vec![resolution.into_any_element()];
+        if self.has_cap_pro
+            && let Some((mbps, capped_res)) = crate::network_health::active_cap_for(effective)
+        {
+            let testing = crate::network_health::is_testing();
+            let capped_label = crate::network_health::resolution_tier_label(capped_res);
+            let notice = format!(
+                "Capped at {capped_label} based on your upload speed ({mbps:.1} Mbps)."
+            );
+            let retest_button = self
+                .button(
+                    "instant-upload-health-retest",
+                    (ui::ButtonVariant::Gray, Some("icons/rotate-ccw.svg")),
+                    if testing { "Testing..." } else { "Re-test" },
+                    testing,
+                    cx,
+                    |_, _, cx| crate::network_health::retest(cx),
+                )
+                .into_any_element();
+            rows.push(
+                div()
+                    .id("settings-instant-upload-health-notice")
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .justify_between()
+                    .gap(px(12.))
+                    .p(px(12.))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_size(px(12.))
+                            .text_color(Hsla::from(theme.amber_11))
+                            .child(notice),
+                    )
+                    .child(retest_button)
+                    .into_any_element(),
+            );
+        }
         if let Some(InstantQualityNotice::SaveFailed) = self.instant_quality_notice {
             rows.push(
                 div()

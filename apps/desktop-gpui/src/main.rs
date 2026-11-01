@@ -70,6 +70,7 @@ mod permissions_ui;
 mod picker_benchmark;
 #[cfg(debug_assertions)]
 mod picker_ui_benchmark;
+mod network_health;
 mod platform;
 mod presets;
 mod project_save;
@@ -505,6 +506,7 @@ fn main() {
         app_windows::schedule_launch_render_warmup(cx);
         upload::queue::init(cx);
         upload::instant_cleanup::init(cx);
+        network_health::init(cx);
 
         // The app menu (and with it ⌘W/⌘M/⌘Q) and the status-bar item. Both
         // reach into the window registry, so they come after it -- and the menu

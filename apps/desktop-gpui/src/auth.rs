@@ -446,6 +446,7 @@ pub fn process_auth_data(params: AuthParams) -> Result<(), String> {
     }))) {
         return Err("Failed to persist auth session".into());
     }
+    crate::network_health::on_auth_changed();
     Ok(())
 }
 
